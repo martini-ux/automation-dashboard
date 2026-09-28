@@ -3,6 +3,7 @@ import json
 import re
 from pathlib import Path
 from openai import OpenAI
+from supabase import create_client
 
 
 # -------------------------------------------------
@@ -17,15 +18,23 @@ st.set_page_config(
 
 
 # -------------------------------------------------
-# LOAD KNOWLEDGE BASE + AI PROMPT
+# LOAD KNOWLEDGE BASE + PROMPT
 # -------------------------------------------------
 
 BASE_DIR = Path(__file__).parent
 
-with open(BASE_DIR / "data" / "knowledge_base.json", "r", encoding="utf-8") as file:
+with open(
+    BASE_DIR / "data" / "knowledge_base.json",
+    "r",
+    encoding="utf-8"
+) as file:
     knowledge_base = json.load(file)
 
-with open(BASE_DIR / "prompts" / "affiliate_manager.txt", "r", encoding="utf-8") as file:
+with open(
+    BASE_DIR / "prompts" / "affiliate_manager.txt",
+    "r",
+    encoding="utf-8"
+) as file:
     manager_prompt = file.read()
 
 
@@ -37,7 +46,10 @@ defaults = {
     "english_question": "",
     "english_response": "",
     "bahasa_question": "",
-    "bahasa_response": ""
+    "bahasa_response": "",
+    "generated_affiliate_name": "",
+    "generated_original_question": "",
+    "conversation_saved": False
 }
 
 for key, value in defaults.items():
@@ -57,6 +69,18 @@ def get_deepseek_client():
 
 
 # -------------------------------------------------
+# SUPABASE CLIENT
+# -------------------------------------------------
+
+@st.cache_resource
+def get_supabase_client():
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_SECRET_KEY"]
+    )
+
+
+# -------------------------------------------------
 # EXACT FAQ FALLBACK
 # -------------------------------------------------
 
@@ -68,18 +92,35 @@ def normalize_text(text):
 
 
 def exact_faq_match(question):
+
     normalized_question = normalize_text(question)
 
     for faq in knowledge_base.get("faq", []):
-        english = normalize_text(faq.get("question_en", ""))
-        bahasa = normalize_text(faq.get("question_id", ""))
 
-        if normalized_question == english or normalized_question == bahasa:
+        english = normalize_text(
+            faq.get("question_en", "")
+        )
+
+        bahasa = normalize_text(
+            faq.get("question_id", "")
+        )
+
+        if (
+            normalized_question == english
+            or normalized_question == bahasa
+        ):
             return {
-                "english_question": faq.get("question_en", ""),
-                "english_response": faq.get("answer_en", ""),
-                "bahasa_question": faq.get("question_id", ""),
-                "bahasa_response": faq.get("answer_id", "")
+                "english_question":
+                    faq.get("question_en", ""),
+
+                "english_response":
+                    faq.get("answer_en", ""),
+
+                "bahasa_question":
+                    faq.get("question_id", ""),
+
+                "bahasa_response":
+                    faq.get("answer_id", "")
             }
 
     return None
@@ -89,9 +130,18 @@ def exact_faq_match(question):
 # PARSE AI RESPONSE
 # -------------------------------------------------
 
-def extract_section(text, section, next_section=None):
+def extract_section(
+    text,
+    section,
+    next_section=None
+):
+
     if next_section:
-        pattern = rf"{section}:\s*(.*?)(?=\n{next_section}:)"
+        pattern = (
+            rf"{section}:\s*"
+            rf"(.*?)"
+            rf"(?=\n{next_section}:)"
+        )
     else:
         pattern = rf"{section}:\s*(.*)$"
 
@@ -108,26 +158,34 @@ def extract_section(text, section, next_section=None):
 
 
 def parse_ai_response(text):
+
     return {
-        "english_question": extract_section(
-            text,
-            "ENGLISH_QUESTION",
-            "ENGLISH_RESPONSE"
-        ),
-        "english_response": extract_section(
-            text,
-            "ENGLISH_RESPONSE",
-            "BAHASA_QUESTION"
-        ),
-        "bahasa_question": extract_section(
-            text,
-            "BAHASA_QUESTION",
-            "BAHASA_RESPONSE"
-        ),
-        "bahasa_response": extract_section(
-            text,
-            "BAHASA_RESPONSE"
-        )
+        "english_question":
+            extract_section(
+                text,
+                "ENGLISH_QUESTION",
+                "ENGLISH_RESPONSE"
+            ),
+
+        "english_response":
+            extract_section(
+                text,
+                "ENGLISH_RESPONSE",
+                "BAHASA_QUESTION"
+            ),
+
+        "bahasa_question":
+            extract_section(
+                text,
+                "BAHASA_QUESTION",
+                "BAHASA_RESPONSE"
+            ),
+
+        "bahasa_response":
+            extract_section(
+                text,
+                "BAHASA_RESPONSE"
+            )
     }
 
 
@@ -135,7 +193,10 @@ def parse_ai_response(text):
 # GENERATE RESPONSE
 # -------------------------------------------------
 
-def generate_response(affiliate_name, affiliate_question):
+def generate_response(
+    affiliate_name,
+    affiliate_question
+):
 
     client = get_deepseek_client()
 
@@ -174,9 +235,52 @@ Generate the best response according to your instructions.
         max_tokens=900
     )
 
-    output = response.choices[0].message.content
+    output = (
+        response
+        .choices[0]
+        .message
+        .content
+    )
 
     return parse_ai_response(output)
+
+
+# -------------------------------------------------
+# SAVE CONVERSATION
+# -------------------------------------------------
+
+def save_conversation():
+
+    supabase = get_supabase_client()
+
+    conversation = {
+        "affiliate_name":
+            st.session_state.generated_affiliate_name,
+
+        "original_question":
+            st.session_state.generated_original_question,
+
+        "english_question":
+            st.session_state.english_question,
+
+        "english_response":
+            st.session_state.english_response,
+
+        "bahasa_question":
+            st.session_state.bahasa_question,
+
+        "bahasa_response":
+            st.session_state.bahasa_response
+    }
+
+    result = (
+        supabase
+        .table("affiliate_conversations")
+        .insert(conversation)
+        .execute()
+    )
+
+    return result
 
 
 # -------------------------------------------------
@@ -186,7 +290,8 @@ Generate the best response according to your instructions.
 st.title("💬 Affiliate Response Assistant")
 
 st.caption(
-    "Generate short, natural affiliate responses in English and Bahasa Indonesia."
+    "Generate short, natural affiliate responses "
+    "in English and Bahasa Indonesia."
 )
 
 st.divider()
@@ -221,16 +326,25 @@ generate_button = st.button(
 if generate_button:
 
     if not affiliate_name.strip():
-        st.warning("Please enter the affiliate name.")
+
+        st.warning(
+            "Please enter the affiliate name."
+        )
 
     elif not affiliate_question.strip():
-        st.warning("Please paste the affiliate question.")
+
+        st.warning(
+            "Please paste the affiliate question."
+        )
 
     else:
 
-        with st.spinner("Creating response..."):
+        with st.spinner(
+            "Creating response..."
+        ):
 
             try:
+
                 result = generate_response(
                     affiliate_name,
                     affiliate_question
@@ -240,13 +354,38 @@ if generate_button:
                     result["english_response"]
                     and result["bahasa_response"]
                 ):
-                    st.session_state.english_question = result["english_question"]
-                    st.session_state.english_response = result["english_response"]
-                    st.session_state.bahasa_question = result["bahasa_question"]
-                    st.session_state.bahasa_response = result["bahasa_response"]
+
+                    st.session_state.english_question = (
+                        result["english_question"]
+                    )
+
+                    st.session_state.english_response = (
+                        result["english_response"]
+                    )
+
+                    st.session_state.bahasa_question = (
+                        result["bahasa_question"]
+                    )
+
+                    st.session_state.bahasa_response = (
+                        result["bahasa_response"]
+                    )
+
+                    st.session_state.generated_affiliate_name = (
+                        affiliate_name.strip()
+                    )
+
+                    st.session_state.generated_original_question = (
+                        affiliate_question.strip()
+                    )
+
+                    st.session_state.conversation_saved = False
 
                 else:
-                    raise ValueError("AI response format was incomplete.")
+
+                    raise ValueError(
+                        "AI response format was incomplete."
+                    )
 
             except Exception:
 
@@ -256,18 +395,42 @@ if generate_button:
 
                 if fallback:
 
-                    st.session_state.english_question = fallback["english_question"]
-                    st.session_state.english_response = fallback["english_response"]
-                    st.session_state.bahasa_question = fallback["bahasa_question"]
-                    st.session_state.bahasa_response = fallback["bahasa_response"]
+                    st.session_state.english_question = (
+                        fallback["english_question"]
+                    )
+
+                    st.session_state.english_response = (
+                        fallback["english_response"]
+                    )
+
+                    st.session_state.bahasa_question = (
+                        fallback["bahasa_question"]
+                    )
+
+                    st.session_state.bahasa_response = (
+                        fallback["bahasa_response"]
+                    )
+
+                    st.session_state.generated_affiliate_name = (
+                        affiliate_name.strip()
+                    )
+
+                    st.session_state.generated_original_question = (
+                        affiliate_question.strip()
+                    )
+
+                    st.session_state.conversation_saved = False
 
                     st.info(
-                        "AI was unavailable, so an exact FAQ answer was used."
+                        "AI was unavailable, so an exact "
+                        "FAQ answer was used."
                     )
 
                 else:
+
                     st.error(
-                        "AI service is temporarily unavailable. Please try again."
+                        "AI service is temporarily unavailable. "
+                        "Please try again."
                     )
 
 
@@ -278,7 +441,9 @@ st.divider()
 # BILINGUAL OUTPUT
 # -------------------------------------------------
 
-english_column, bahasa_column = st.columns(2)
+english_column, bahasa_column = (
+    st.columns(2)
+)
 
 
 with english_column:
@@ -289,7 +454,10 @@ with english_column:
 
     st.text_area(
         "English Question",
-        value=st.session_state.english_question,
+        value=(
+            st.session_state
+            .english_question
+        ),
         height=100,
         disabled=True,
         label_visibility="collapsed"
@@ -299,7 +467,10 @@ with english_column:
 
     st.text_area(
         "English Response",
-        value=st.session_state.english_response,
+        value=(
+            st.session_state
+            .english_response
+        ),
         height=220,
         disabled=True,
         label_visibility="collapsed"
@@ -308,13 +479,18 @@ with english_column:
 
 with bahasa_column:
 
-    st.subheader("🇮🇩 Bahasa Indonesia")
+    st.subheader(
+        "🇮🇩 Bahasa Indonesia"
+    )
 
     st.markdown("**Pertanyaan**")
 
     st.text_area(
         "Bahasa Question",
-        value=st.session_state.bahasa_question,
+        value=(
+            st.session_state
+            .bahasa_question
+        ),
         height=100,
         disabled=True,
         label_visibility="collapsed"
@@ -324,7 +500,10 @@ with bahasa_column:
 
     st.text_area(
         "Bahasa Response",
-        value=st.session_state.bahasa_response,
+        value=(
+            st.session_state
+            .bahasa_response
+        ),
         height=220,
         disabled=True,
         label_visibility="collapsed"
@@ -332,13 +511,54 @@ with bahasa_column:
 
 
 # -------------------------------------------------
-# SAVE — COMING NEXT
+# SAVE CONVERSATION
 # -------------------------------------------------
 
 st.divider()
 
-st.button(
+has_response = bool(
+    st.session_state.english_response
+    and st.session_state.bahasa_response
+)
+
+save_disabled = (
+    not has_response
+    or st.session_state.conversation_saved
+)
+
+save_button = st.button(
     "💾 Save Conversation",
     use_container_width=True,
-    disabled=True
+    disabled=save_disabled
 )
+
+
+if save_button:
+
+    try:
+
+        with st.spinner(
+            "Saving conversation..."
+        ):
+
+            save_conversation()
+
+        st.session_state.conversation_saved = True
+
+        st.success(
+            "Conversation saved successfully."
+        )
+
+    except Exception:
+
+        st.error(
+            "The conversation could not be saved. "
+            "Please check the Supabase connection."
+        )
+
+
+if st.session_state.conversation_saved:
+
+    st.caption(
+        "✅ This conversation has been saved."
+    )
