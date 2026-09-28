@@ -109,9 +109,6 @@ def tokenize(text):
 
 # =========================================================
 # SEARCH SYNONYMS
-#
-# Helps English + Indonesian questions retrieve the same
-# knowledge.
 # =========================================================
 
 SYNONYMS = {
@@ -219,6 +216,7 @@ def expand_query(question):
 
         found = False
 
+
         for related in related_words:
 
             related_normalized = normalize_text(
@@ -227,6 +225,7 @@ def expand_query(question):
 
 
             if related_normalized in normalized:
+
                 found = True
                 break
 
@@ -267,6 +266,7 @@ def expand_query(question):
             for related in related_words:
 
                 for word in tokenize(related):
+
                     words.add(word)
 
 
@@ -282,9 +282,7 @@ def create_knowledge_chunks():
     chunks = []
 
 
-    # -----------------------------------------------------
-    # FAQ — each FAQ is its own chunk
-    # -----------------------------------------------------
+    # FAQ
 
     for faq in knowledge_base.get(
         "faq",
@@ -304,9 +302,7 @@ def create_knowledge_chunks():
         })
 
 
-    # -----------------------------------------------------
-    # Troubleshooting — each issue separately
-    # -----------------------------------------------------
+    # Troubleshooting
 
     for item in knowledge_base.get(
         "troubleshooting",
@@ -326,9 +322,7 @@ def create_knowledge_chunks():
         })
 
 
-    # -----------------------------------------------------
-    # Affiliate classes separately
-    # -----------------------------------------------------
+    # Affiliate classes
 
     affiliate_classes = knowledge_base.get(
         "affiliate_classes",
@@ -349,9 +343,7 @@ def create_knowledge_chunks():
         })
 
 
-    # -----------------------------------------------------
-    # Main knowledge sections
-    # -----------------------------------------------------
+    # Main sections
 
     section_names = [
 
@@ -437,9 +429,7 @@ def score_chunk(
     score = 0.0
 
 
-    # -----------------------------------------------------
     # Exact keyword matches
-    # -----------------------------------------------------
 
     for query_word in query_words:
 
@@ -453,10 +443,7 @@ def score_chunk(
             score += 2.0
 
 
-    # -----------------------------------------------------
     # Fuzzy word matches
-    # Handles misspellings: commission / commision
-    # -----------------------------------------------------
 
     for query_word in query_words:
 
@@ -497,9 +484,7 @@ def score_chunk(
             score += 1.0
 
 
-    # -----------------------------------------------------
-    # Bonus if query looks like the FAQ question
-    # -----------------------------------------------------
+    # FAQ-question similarity bonus
 
     if chunk["path"].startswith("FAQ"):
 
@@ -545,7 +530,7 @@ def score_chunk(
 
 
 # =========================================================
-# RETRIEVE ONLY RELEVANT KNOWLEDGE
+# RETRIEVE RELEVANT KNOWLEDGE
 # =========================================================
 
 def retrieve_knowledge(
@@ -627,9 +612,7 @@ def retrieve_knowledge(
         )
 
 
-    # -----------------------------------------------------
-    # Always include core manager rules
-    # -----------------------------------------------------
+    # Always include manager rules
 
     manager_rules = json.dumps(
         {
@@ -656,7 +639,7 @@ def retrieve_knowledge(
 
 
 # =========================================================
-# STRUCTURED OUTPUT SCHEMA FOR GROQ
+# GROQ RESPONSE FORMAT
 # =========================================================
 
 GROQ_RESPONSE_FORMAT = {
@@ -770,7 +753,7 @@ Always provide both English and Bahasa Indonesia.
 
 
 # =========================================================
-# GROQ — PRIMARY LLM
+# GROQ — PRIMARY
 # =========================================================
 
 def generate_with_groq(
@@ -859,16 +842,13 @@ def generate_with_groq(
     )
 
 
-    result = json.loads(
+    return json.loads(
         content
     )
 
 
-    return result
-
-
 # =========================================================
-# DEEPSEEK — BACKUP LLM
+# DEEPSEEK — BACKUP
 # =========================================================
 
 def generate_with_deepseek(
@@ -978,7 +958,6 @@ Do not include markdown or code fences.
     )
 
 
-    # Remove accidental Markdown fences
     content = re.sub(
         r"^```json\s*",
         "",
@@ -1041,9 +1020,6 @@ def faq_fallback(question):
             best_faq = faq
 
 
-    # Require a strong match.
-    # Better to say "I will check" than give wrong facts.
-
     if (
         best_faq
         and
@@ -1101,7 +1077,7 @@ def faq_fallback(question):
 
 
 # =========================================================
-# VALIDATE LLM RESULT
+# VALIDATE RESULT
 # =========================================================
 
 def valid_result(result):
@@ -1144,12 +1120,6 @@ def valid_result(result):
 
 # =========================================================
 # MAIN GENERATION PIPELINE
-#
-# GROQ
-#   ↓ failure
-# DEEPSEEK
-#   ↓ failure
-# KNOWLEDGE BASE
 # =========================================================
 
 def generate_response(
@@ -1157,9 +1127,7 @@ def generate_response(
     affiliate_question
 ):
 
-    # -----------------------------------------------------
-    # 1. GROQ PRIMARY
-    # -----------------------------------------------------
+    # GROQ PRIMARY
 
     try:
 
@@ -1179,9 +1147,7 @@ def generate_response(
         pass
 
 
-    # -----------------------------------------------------
-    # 2. DEEPSEEK BACKUP
-    # -----------------------------------------------------
+    # DEEPSEEK BACKUP
 
     try:
 
@@ -1201,9 +1167,7 @@ def generate_response(
         pass
 
 
-    # -----------------------------------------------------
-    # 3. KNOWLEDGE BASE FALLBACK
-    # -----------------------------------------------------
+    # KNOWLEDGE BASE FALLBACK
 
     return faq_fallback(
         affiliate_question
@@ -1285,10 +1249,11 @@ if generate_button:
 
     else:
 
+        # Nice running/loading indicator
         with st.spinner(
-            "Creating response..."
+            "✨ Creating the best response from your knowledge base...",
+            show_time=True
         ):
-
 
             result = generate_response(
 
@@ -1313,6 +1278,13 @@ if generate_button:
             st.session_state.bahasa_response = (
                 result["bahasa_response"]
             )
+
+
+        # Small finished notification
+        st.toast(
+            "Response ready!",
+            icon="✅"
+        )
 
 
 # =========================================================
@@ -1366,21 +1338,27 @@ with english_column:
     )
 
 
-    st.text_area(
+    if st.session_state.english_response:
 
-        "English Response",
+        st.code(
+            st.session_state.english_response,
+            language=None,
+            wrap_lines=True
+        )
 
-        value=(
-            st.session_state
-            .english_response
-        ),
+        st.caption(
+            "📋 Use the copy icon in the top-right corner."
+        )
 
-        height=220,
+    else:
 
-        disabled=True,
-
-        label_visibility="collapsed"
-    )
+        st.text_area(
+            "English Response",
+            value="",
+            height=180,
+            disabled=True,
+            label_visibility="collapsed"
+        )
 
 
 # =========================================================
@@ -1422,18 +1400,24 @@ with bahasa_column:
     )
 
 
-    st.text_area(
+    if st.session_state.bahasa_response:
 
-        "Bahasa Response",
+        st.code(
+            st.session_state.bahasa_response,
+            language=None,
+            wrap_lines=True
+        )
 
-        value=(
-            st.session_state
-            .bahasa_response
-        ),
+        st.caption(
+            "📋 Gunakan ikon copy di pojok kanan atas."
+        )
 
-        height=220,
+    else:
 
-        disabled=True,
-
-        label_visibility="collapsed"
-    )
+        st.text_area(
+            "Bahasa Response",
+            value="",
+            height=180,
+            disabled=True,
+            label_visibility="collapsed"
+        )
