@@ -2,9 +2,9 @@ import streamlit as st
 import json
 import re
 import requests
+
 from difflib import SequenceMatcher
 from pathlib import Path
-from supabase import create_client
 
 
 # =========================================================
@@ -19,10 +19,27 @@ st.set_page_config(
 
 
 # =========================================================
-# LOAD KNOWLEDGE BASE + PROMPT
+# SETTINGS
+# =========================================================
+
+GROQ_MODEL = "openai/gpt-oss-120b"
+DEEPSEEK_MODEL = "deepseek-flash"
+
+GROQ_URL = (
+    "https://api.groq.com/openai/v1/chat/completions"
+)
+
+DEEPSEEK_URL = (
+    "https://api.deepseek.com/chat/completions"
+)
+
+
+# =========================================================
+# LOAD KNOWLEDGE BASE + MANAGER PROMPT
 # =========================================================
 
 BASE_DIR = Path(__file__).parent
+
 
 with open(
     BASE_DIR / "data" / "knowledge_base.json",
@@ -30,6 +47,7 @@ with open(
     encoding="utf-8"
 ) as file:
     knowledge_base = json.load(file)
+
 
 with open(
     BASE_DIR / "prompts" / "affiliate_manager.txt",
@@ -47,41 +65,27 @@ defaults = {
     "english_question": "",
     "english_response": "",
     "bahasa_question": "",
-    "bahasa_response": "",
-    "generated_affiliate_name": "",
-    "generated_original_question": "",
-    "conversation_saved": False
+    "bahasa_response": ""
 }
 
+
 for key, value in defaults.items():
+
     if key not in st.session_state:
         st.session_state[key] = value
 
 
 # =========================================================
-# SUPABASE
-# =========================================================
-
-@st.cache_resource
-def get_supabase_client():
-
-    return create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_SECRET_KEY"]
-    )
-
-
-# =========================================================
-# TEXT HELPERS
+# TEXT NORMALIZATION
 # =========================================================
 
 def normalize_text(text):
 
-    text = text.lower().strip()
+    text = str(text).lower().strip()
 
     text = re.sub(
         r"[^\w\s]",
-        "",
+        " ",
         text
     )
 
@@ -91,272 +95,846 @@ def normalize_text(text):
         text
     )
 
-    return text
+    return text.strip()
 
 
-def similarity(a, b):
+def tokenize(text):
 
-    return SequenceMatcher(
-        None,
-        normalize_text(a),
-        normalize_text(b)
-    ).ratio()
-
-
-# =========================================================
-# SMART FAQ FALLBACK
-# =========================================================
-
-def smart_faq_match(question):
-
-    normalized_question = normalize_text(question)
-
-    question_words = normalized_question.split()
-
-    best_match = None
-    best_score = 0
-
-
-    for faq in knowledge_base.get("faq", []):
-
-        english_question = faq.get(
-            "question_en",
-            ""
-        )
-
-        bahasa_question = faq.get(
-            "question_id",
-            ""
-        )
-
-        tags = faq.get(
-            "tags",
-            []
-        )
-
-
-        # -----------------------------------------
-        # Full-question similarity
-        # -----------------------------------------
-
-        english_score = similarity(
-            question,
-            english_question
-        )
-
-        bahasa_score = similarity(
-            question,
-            bahasa_question
-        )
-
-        score = max(
-            english_score,
-            bahasa_score
-        )
-
-
-        # -----------------------------------------
-        # Tag / keyword similarity
-        # -----------------------------------------
-
-        for tag in tags:
-
-            normalized_tag = normalize_text(
-                tag
-            )
-
-            tag_words = normalized_tag.split()
-
-            for question_word in question_words:
-
-                for tag_word in tag_words:
-
-                    word_score = SequenceMatcher(
-                        None,
-                        question_word,
-                        tag_word
-                    ).ratio()
-
-                    if word_score >= 0.80:
-
-                        score = max(
-                            score,
-                            0.85
-                        )
-
-
-        # -----------------------------------------
-        # Pick best FAQ
-        # -----------------------------------------
-
-        if score > best_score:
-
-            best_score = score
-
-            best_match = faq
-
-
-    # Require reasonable confidence
-    if best_match and best_score >= 0.60:
-
-        return {
-
-            "english_question":
-                best_match.get(
-                    "question_en",
-                    ""
-                ),
-
-            "english_response":
-                best_match.get(
-                    "answer_en",
-                    ""
-                ),
-
-            "bahasa_question":
-                best_match.get(
-                    "question_id",
-                    ""
-                ),
-
-            "bahasa_response":
-                best_match.get(
-                    "answer_id",
-                    ""
-                )
-        }
-
-
-    return None
+    return [
+        word
+        for word in normalize_text(text).split()
+        if len(word) >= 2
+    ]
 
 
 # =========================================================
-# PARSE DEEPSEEK RESPONSE
+# SEARCH SYNONYMS
+#
+# Helps English + Indonesian questions retrieve the same
+# knowledge.
 # =========================================================
 
-def extract_section(
-    text,
-    section,
-    next_section=None
-):
+SYNONYMS = {
 
-    if next_section:
+    "commission": [
+        "commission",
+        "commision",
+        "komisi",
+        "revshare",
+        "earning",
+        "earnings",
+        "profit"
+    ],
 
-        pattern = (
-            rf"{section}:\s*"
-            rf"(.*?)"
-            rf"(?=\n{next_section}:)"
-        )
+    "payout": [
+        "payout",
+        "payment",
+        "withdraw",
+        "withdrawal",
+        "balance",
+        "pembayaran",
+        "penarikan",
+        "saldo"
+    ],
 
-    else:
+    "link": [
+        "link",
+        "affiliate",
+        "tracking",
+        "tautan",
+        "link afiliasi"
+    ],
 
-        pattern = (
-            rf"{section}:\s*(.*)$"
-        )
+    "promo": [
+        "promo",
+        "code",
+        "kode",
+        "promotion",
+        "promosi"
+    ],
+
+    "wallet": [
+        "wallet",
+        "dompet",
+        "player account",
+        "payment wallet"
+    ],
+
+    "ftd": [
+        "ftd",
+        "first time depositor",
+        "deposit",
+        "depositor",
+        "setoran"
+    ],
+
+    "subid": [
+        "subid",
+        "tracking",
+        "campaign",
+        "traffic"
+    ],
+
+    "player": [
+        "player",
+        "players",
+        "pemain",
+        "active player",
+        "pemain aktif"
+    ],
+
+    "registration": [
+        "registration",
+        "register",
+        "affiliate",
+        "daftar",
+        "pendaftaran"
+    ],
+
+    "marketing": [
+        "marketing",
+        "promotion",
+        "traffic",
+        "audience",
+        "promosi",
+        "traffic source"
+    ]
+}
 
 
-    match = re.search(
-        pattern,
-        text,
-        flags=re.DOTALL | re.IGNORECASE
+# =========================================================
+# EXPAND USER QUERY
+# =========================================================
+
+def expand_query(question):
+
+    normalized = normalize_text(question)
+
+    words = set(
+        tokenize(question)
     )
 
 
-    if match:
+    for main_word, related_words in SYNONYMS.items():
 
-        return match.group(1).strip()
+        found = False
 
+        for related in related_words:
 
-    return ""
-
-
-def parse_ai_response(text):
-
-    return {
-
-        "english_question":
-
-            extract_section(
-                text,
-                "ENGLISH_QUESTION",
-                "ENGLISH_RESPONSE"
-            ),
-
-        "english_response":
-
-            extract_section(
-                text,
-                "ENGLISH_RESPONSE",
-                "BAHASA_QUESTION"
-            ),
-
-        "bahasa_question":
-
-            extract_section(
-                text,
-                "BAHASA_QUESTION",
-                "BAHASA_RESPONSE"
-            ),
-
-        "bahasa_response":
-
-            extract_section(
-                text,
-                "BAHASA_RESPONSE"
+            related_normalized = normalize_text(
+                related
             )
-    }
+
+
+            if related_normalized in normalized:
+                found = True
+                break
+
+
+            for question_word in words:
+
+                for related_word in tokenize(
+                    related_normalized
+                ):
+
+                    score = SequenceMatcher(
+                        None,
+                        question_word,
+                        related_word
+                    ).ratio()
+
+
+                    if score >= 0.84:
+
+                        found = True
+                        break
+
+
+                if found:
+                    break
+
+
+            if found:
+                break
+
+
+        if found:
+
+            words.add(
+                main_word
+            )
+
+            for related in related_words:
+
+                for word in tokenize(related):
+                    words.add(word)
+
+
+    return words
 
 
 # =========================================================
-# DEEPSEEK ONLY
+# BUILD SEARCHABLE KNOWLEDGE CHUNKS
 # =========================================================
 
-def generate_deepseek_response(
-    affiliate_name,
-    affiliate_question
+def create_knowledge_chunks():
+
+    chunks = []
+
+
+    # -----------------------------------------------------
+    # FAQ — each FAQ is its own chunk
+    # -----------------------------------------------------
+
+    for faq in knowledge_base.get(
+        "faq",
+        []
+    ):
+
+        chunks.append({
+            "path":
+                "FAQ > "
+                + faq.get(
+                    "id",
+                    "FAQ"
+                ),
+
+            "data":
+                faq
+        })
+
+
+    # -----------------------------------------------------
+    # Troubleshooting — each issue separately
+    # -----------------------------------------------------
+
+    for item in knowledge_base.get(
+        "troubleshooting",
+        []
+    ):
+
+        chunks.append({
+            "path":
+                "Troubleshooting > "
+                + item.get(
+                    "issue",
+                    "Issue"
+                ),
+
+            "data":
+                item
+        })
+
+
+    # -----------------------------------------------------
+    # Affiliate classes separately
+    # -----------------------------------------------------
+
+    affiliate_classes = knowledge_base.get(
+        "affiliate_classes",
+        {}
+    )
+
+
+    for class_name, class_data in (
+        affiliate_classes.items()
+    ):
+
+        chunks.append({
+            "path":
+                f"Affiliate Class > {class_name}",
+
+            "data":
+                class_data
+        })
+
+
+    # -----------------------------------------------------
+    # Main knowledge sections
+    # -----------------------------------------------------
+
+    section_names = [
+
+        "commission",
+
+        "payout_rules",
+
+        "affiliate_link_generation",
+
+        "promo_codes",
+
+        "payment_wallet",
+
+        "glossary",
+
+        "promo_material_guidelines",
+
+        "compliance",
+
+        "onboarding",
+
+        "final_strategy",
+
+        "registration",
+
+        "activation"
+    ]
+
+
+    for section_name in section_names:
+
+        section = knowledge_base.get(
+            section_name
+        )
+
+
+        if section is not None:
+
+            chunks.append({
+                "path":
+                    section_name,
+
+                "data":
+                    section
+            })
+
+
+    return chunks
+
+
+KNOWLEDGE_CHUNKS = create_knowledge_chunks()
+
+
+# =========================================================
+# SCORE KNOWLEDGE CHUNK
+# =========================================================
+
+def score_chunk(
+    question,
+    query_words,
+    chunk
 ):
 
-    knowledge_text = json.dumps(
-        knowledge_base,
+    chunk_text = (
+        chunk["path"]
+        + " "
+        + json.dumps(
+            chunk["data"],
+            ensure_ascii=False
+        )
+    )
+
+
+    chunk_normalized = normalize_text(
+        chunk_text
+    )
+
+    chunk_words = set(
+        tokenize(chunk_text)
+    )
+
+
+    score = 0.0
+
+
+    # -----------------------------------------------------
+    # Exact keyword matches
+    # -----------------------------------------------------
+
+    for query_word in query_words:
+
+        if query_word in chunk_words:
+
+            score += 4.0
+
+
+        elif query_word in chunk_normalized:
+
+            score += 2.0
+
+
+    # -----------------------------------------------------
+    # Fuzzy word matches
+    # Handles misspellings: commission / commision
+    # -----------------------------------------------------
+
+    for query_word in query_words:
+
+        best_word_score = 0
+
+
+        for chunk_word in chunk_words:
+
+            if abs(
+                len(query_word)
+                -
+                len(chunk_word)
+            ) > 4:
+
+                continue
+
+
+            fuzzy_score = SequenceMatcher(
+                None,
+                query_word,
+                chunk_word
+            ).ratio()
+
+
+            best_word_score = max(
+                best_word_score,
+                fuzzy_score
+            )
+
+
+        if best_word_score >= 0.90:
+
+            score += 2.0
+
+
+        elif best_word_score >= 0.82:
+
+            score += 1.0
+
+
+    # -----------------------------------------------------
+    # Bonus if query looks like the FAQ question
+    # -----------------------------------------------------
+
+    if chunk["path"].startswith("FAQ"):
+
+        faq_question_en = str(
+            chunk["data"].get(
+                "question_en",
+                ""
+            )
+        )
+
+        faq_question_id = str(
+            chunk["data"].get(
+                "question_id",
+                ""
+            )
+        )
+
+
+        english_similarity = SequenceMatcher(
+            None,
+            normalize_text(question),
+            normalize_text(faq_question_en)
+        ).ratio()
+
+
+        bahasa_similarity = SequenceMatcher(
+            None,
+            normalize_text(question),
+            normalize_text(faq_question_id)
+        ).ratio()
+
+
+        score += (
+            max(
+                english_similarity,
+                bahasa_similarity
+            )
+            * 4
+        )
+
+
+    return score
+
+
+# =========================================================
+# RETRIEVE ONLY RELEVANT KNOWLEDGE
+# =========================================================
+
+def retrieve_knowledge(
+    question,
+    max_chunks=5,
+    max_characters=7500
+):
+
+    query_words = expand_query(
+        question
+    )
+
+
+    scored = []
+
+
+    for chunk in KNOWLEDGE_CHUNKS:
+
+        score = score_chunk(
+            question,
+            query_words,
+            chunk
+        )
+
+
+        if score > 0:
+
+            scored.append(
+                (
+                    score,
+                    chunk
+                )
+            )
+
+
+    scored.sort(
+        key=lambda item: item[0],
+        reverse=True
+    )
+
+
+    selected = []
+
+    total_characters = 0
+
+
+    for score, chunk in scored[:max_chunks]:
+
+        chunk_string = json.dumps(
+            {
+                "section":
+                    chunk["path"],
+
+                "information":
+                    chunk["data"]
+            },
+            ensure_ascii=False,
+            indent=2
+        )
+
+
+        if (
+            total_characters
+            +
+            len(chunk_string)
+            >
+            max_characters
+        ):
+
+            continue
+
+
+        selected.append(
+            chunk_string
+        )
+
+        total_characters += len(
+            chunk_string
+        )
+
+
+    # -----------------------------------------------------
+    # Always include core manager rules
+    # -----------------------------------------------------
+
+    manager_rules = json.dumps(
+        {
+            "manager_rules":
+                knowledge_base.get(
+                    "manager_rules",
+                    {}
+                )
+        },
         ensure_ascii=False,
         indent=2
     )
 
 
-    user_message = f"""
+    selected.insert(
+        0,
+        manager_rules
+    )
+
+
+    return "\n\n".join(
+        selected
+    )
+
+
+# =========================================================
+# STRUCTURED OUTPUT SCHEMA FOR GROQ
+# =========================================================
+
+GROQ_RESPONSE_FORMAT = {
+
+    "type":
+        "json_schema",
+
+    "json_schema": {
+
+        "name":
+            "affiliate_response",
+
+        "strict":
+            True,
+
+        "schema": {
+
+            "type":
+                "object",
+
+            "properties": {
+
+                "english_question": {
+                    "type":
+                        "string"
+                },
+
+                "english_response": {
+                    "type":
+                        "string"
+                },
+
+                "bahasa_question": {
+                    "type":
+                        "string"
+                },
+
+                "bahasa_response": {
+                    "type":
+                        "string"
+                }
+            },
+
+            "required": [
+
+                "english_question",
+
+                "english_response",
+
+                "bahasa_question",
+
+                "bahasa_response"
+            ],
+
+            "additionalProperties":
+                False
+        }
+    }
+}
+
+
+# =========================================================
+# BUILD LLM PROMPT
+# =========================================================
+
+def build_user_prompt(
+    affiliate_name,
+    affiliate_question
+):
+
+    relevant_knowledge = (
+        retrieve_knowledge(
+            affiliate_question
+        )
+    )
+
+
+    return f"""
 AFFILIATE NAME:
 {affiliate_name}
 
 AFFILIATE MESSAGE:
 {affiliate_question}
 
-KNOWLEDGE BASE:
-{knowledge_text}
+RELEVANT OFFICIAL KNOWLEDGE:
+{relevant_knowledge}
 
-Generate the best response according to your instructions.
+IMPORTANT:
+
+Use the official knowledge above as the source of truth.
+
+Do not invent company rules, numbers, requirements,
+payout information, commission information, or policies.
+
+If the official knowledge does not contain enough information
+to safely answer an official/company-specific question, use:
+
+English:
+Let me double-check that for you so I can give you the correct information.
+
+Bahasa Indonesia:
+Biar saya cek dulu supaya saya bisa memberikan informasi yang benar kepada kamu.
+
+Write ONE best response.
+
+Keep it natural, friendly, human-like, useful, and short enough
+for Telegram or WhatsApp.
+
+Always provide both English and Bahasa Indonesia.
 """
+
+
+# =========================================================
+# GROQ — PRIMARY LLM
+# =========================================================
+
+def generate_with_groq(
+    affiliate_name,
+    affiliate_question
+):
+
+    user_prompt = build_user_prompt(
+        affiliate_name,
+        affiliate_question
+    )
 
 
     payload = {
 
-        "model": "deepseek-flash",
+        "model":
+            GROQ_MODEL,
 
         "messages": [
 
             {
-                "role": "system",
-                "content": manager_prompt
+                "role":
+                    "system",
+
+                "content":
+                    manager_prompt
             },
 
             {
-                "role": "user",
-                "content": user_message
+                "role":
+                    "user",
+
+                "content":
+                    user_prompt
             }
         ],
 
-        "temperature": 0.5,
+        "reasoning_effort":
+            "low",
 
-        "max_tokens": 900
+        "max_completion_tokens":
+            700,
+
+        "response_format":
+            GROQ_RESPONSE_FORMAT
+    }
+
+
+    headers = {
+
+        "Authorization":
+            f"Bearer {st.secrets['GROQ_API_KEY']}",
+
+        "Content-Type":
+            "application/json"
+    }
+
+
+    response = requests.post(
+
+        GROQ_URL,
+
+        headers=headers,
+
+        json=payload,
+
+        timeout=45
+    )
+
+
+    if response.status_code != 200:
+
+        raise RuntimeError(
+            f"Groq request failed: "
+            f"{response.status_code}"
+        )
+
+
+    data = response.json()
+
+
+    content = (
+        data["choices"][0]
+        ["message"]
+        ["content"]
+    )
+
+
+    result = json.loads(
+        content
+    )
+
+
+    return result
+
+
+# =========================================================
+# DEEPSEEK — BACKUP LLM
+# =========================================================
+
+def generate_with_deepseek(
+    affiliate_name,
+    affiliate_question
+):
+
+    user_prompt = build_user_prompt(
+        affiliate_name,
+        affiliate_question
+    )
+
+
+    deepseek_prompt = (
+        user_prompt
+        +
+        """
+
+Return ONLY valid JSON in exactly this structure:
+
+{
+  "english_question": "...",
+  "english_response": "...",
+  "bahasa_question": "...",
+  "bahasa_response": "..."
+}
+
+Do not include markdown or code fences.
+"""
+    )
+
+
+    payload = {
+
+        "model":
+            DEEPSEEK_MODEL,
+
+        "messages": [
+
+            {
+                "role":
+                    "system",
+
+                "content":
+                    manager_prompt
+            },
+
+            {
+                "role":
+                    "user",
+
+                "content":
+                    deepseek_prompt
+            }
+        ],
+
+        "thinking": {
+            "type":
+                "disabled"
+        },
+
+        "max_tokens":
+            700,
+
+        "temperature":
+            0.4
     }
 
 
@@ -372,80 +950,263 @@ Generate the best response according to your instructions.
 
     response = requests.post(
 
-        "https://api.deepseek.com/chat/completions",
+        DEEPSEEK_URL,
 
         headers=headers,
 
         json=payload,
 
-        timeout=60
+        timeout=45
     )
 
 
     if response.status_code != 200:
 
         raise RuntimeError(
-            f"DeepSeek returned "
-            f"{response.status_code}: "
-            f"{response.text}"
+            f"DeepSeek request failed: "
+            f"{response.status_code}"
         )
 
 
     data = response.json()
 
 
-    output = (
+    content = (
         data["choices"][0]
         ["message"]
         ["content"]
     )
 
 
-    return parse_ai_response(
-        output
+    # Remove accidental Markdown fences
+    content = re.sub(
+        r"^```json\s*",
+        "",
+        content.strip(),
+        flags=re.IGNORECASE
+    )
+
+    content = re.sub(
+        r"\s*```$",
+        "",
+        content.strip()
+    )
+
+
+    return json.loads(
+        content
     )
 
 
 # =========================================================
-# SAVE CONVERSATION
+# FAQ FALLBACK
 # =========================================================
 
-def save_conversation():
+def faq_fallback(question):
 
-    supabase = get_supabase_client()
+    query_words = expand_query(
+        question
+    )
 
 
-    conversation = {
+    best_faq = None
 
-        "affiliate_name":
-            st.session_state.generated_affiliate_name,
+    best_score = 0
 
-        "original_question":
-            st.session_state.generated_original_question,
+
+    for faq in knowledge_base.get(
+        "faq",
+        []
+    ):
+
+        chunk = {
+            "path":
+                "FAQ",
+
+            "data":
+                faq
+        }
+
+
+        score = score_chunk(
+            question,
+            query_words,
+            chunk
+        )
+
+
+        if score > best_score:
+
+            best_score = score
+            best_faq = faq
+
+
+    # Require a strong match.
+    # Better to say "I will check" than give wrong facts.
+
+    if (
+        best_faq
+        and
+        best_score >= 8
+    ):
+
+        return {
+
+            "english_question":
+                best_faq.get(
+                    "question_en",
+                    question
+                ),
+
+            "english_response":
+                best_faq.get(
+                    "answer_en",
+                    ""
+                ),
+
+            "bahasa_question":
+                best_faq.get(
+                    "question_id",
+                    question
+                ),
+
+            "bahasa_response":
+                best_faq.get(
+                    "answer_id",
+                    ""
+                )
+        }
+
+
+    return {
 
         "english_question":
-            st.session_state.english_question,
+            question,
 
         "english_response":
-            st.session_state.english_response,
+            (
+                "Let me double-check that for you "
+                "so I can give you the correct information."
+            ),
 
         "bahasa_question":
-            st.session_state.bahasa_question,
+            question,
 
         "bahasa_response":
-            st.session_state.bahasa_response
+            (
+                "Biar saya cek dulu supaya saya bisa "
+                "memberikan informasi yang benar kepada kamu."
+            )
     }
 
 
-    return (
-        supabase
-        .table(
-            "affiliate_conversations"
+# =========================================================
+# VALIDATE LLM RESULT
+# =========================================================
+
+def valid_result(result):
+
+    if not isinstance(
+        result,
+        dict
+    ):
+
+        return False
+
+
+    required = [
+
+        "english_question",
+
+        "english_response",
+
+        "bahasa_question",
+
+        "bahasa_response"
+    ]
+
+
+    for key in required:
+
+        if (
+            key not in result
+            or
+            not str(
+                result[key]
+            ).strip()
+        ):
+
+            return False
+
+
+    return True
+
+
+# =========================================================
+# MAIN GENERATION PIPELINE
+#
+# GROQ
+#   ↓ failure
+# DEEPSEEK
+#   ↓ failure
+# KNOWLEDGE BASE
+# =========================================================
+
+def generate_response(
+    affiliate_name,
+    affiliate_question
+):
+
+    # -----------------------------------------------------
+    # 1. GROQ PRIMARY
+    # -----------------------------------------------------
+
+    try:
+
+        result = generate_with_groq(
+            affiliate_name,
+            affiliate_question
         )
-        .insert(
-            conversation
+
+
+        if valid_result(result):
+
+            return result
+
+
+    except Exception:
+
+        pass
+
+
+    # -----------------------------------------------------
+    # 2. DEEPSEEK BACKUP
+    # -----------------------------------------------------
+
+    try:
+
+        result = generate_with_deepseek(
+            affiliate_name,
+            affiliate_question
         )
-        .execute()
+
+
+        if valid_result(result):
+
+            return result
+
+
+    except Exception:
+
+        pass
+
+
+    # -----------------------------------------------------
+    # 3. KNOWLEDGE BASE FALLBACK
+    # -----------------------------------------------------
+
+    return faq_fallback(
+        affiliate_question
     )
 
 
@@ -457,10 +1218,12 @@ st.title(
     "💬 Affiliate Response Assistant"
 )
 
+
 st.caption(
     "Generate short, natural affiliate responses "
     "in English and Bahasa Indonesia."
 )
+
 
 st.divider()
 
@@ -470,23 +1233,31 @@ st.divider()
 # =========================================================
 
 affiliate_name = st.text_input(
+
     "Affiliate Name",
+
     placeholder="Example: Rizky"
 )
 
 
 affiliate_question = st.text_area(
+
     "Affiliate Question",
+
     placeholder=(
         "Paste the affiliate's message here..."
     ),
+
     height=140
 )
 
 
 generate_button = st.button(
+
     "✨ Generate Response",
+
     type="primary",
+
     use_container_width=True
 )
 
@@ -518,111 +1289,30 @@ if generate_button:
             "Creating response..."
         ):
 
-            generated = False
+
+            result = generate_response(
+
+                affiliate_name.strip(),
+
+                affiliate_question.strip()
+            )
 
 
-            # =============================================
-            # TRY DEEPSEEK FIRST
-            # =============================================
+            st.session_state.english_question = (
+                result["english_question"]
+            )
 
-            try:
+            st.session_state.english_response = (
+                result["english_response"]
+            )
 
-                result = generate_deepseek_response(
-                    affiliate_name,
-                    affiliate_question
-                )
+            st.session_state.bahasa_question = (
+                result["bahasa_question"]
+            )
 
-
-                if (
-                    result["english_response"]
-                    and
-                    result["bahasa_response"]
-                ):
-
-                    generated = True
-
-
-            except Exception:
-
-                generated = False
-
-
-            # =============================================
-            # KNOWLEDGE BASE FALLBACK
-            # =============================================
-
-            if not generated:
-
-                result = smart_faq_match(
-                    affiliate_question
-                )
-
-
-                if result:
-
-                    generated = True
-
-                    st.info(
-                        "DeepSeek is currently unavailable, "
-                        "so the Knowledge Base was used."
-                    )
-
-
-            # =============================================
-            # STORE RESULT
-            # =============================================
-
-            if generated:
-
-                st.session_state.english_question = (
-                    result["english_question"]
-                )
-
-                st.session_state.english_response = (
-                    result["english_response"]
-                )
-
-                st.session_state.bahasa_question = (
-                    result["bahasa_question"]
-                )
-
-                st.session_state.bahasa_response = (
-                    result["bahasa_response"]
-                )
-
-                st.session_state.generated_affiliate_name = (
-                    affiliate_name.strip()
-                )
-
-                st.session_state.generated_original_question = (
-                    affiliate_question.strip()
-                )
-
-                st.session_state.conversation_saved = False
-
-
-            else:
-
-                # Clear old answer so we do not
-                # accidentally save an old conversation.
-
-                st.session_state.english_question = ""
-                st.session_state.english_response = ""
-
-                st.session_state.bahasa_question = ""
-                st.session_state.bahasa_response = ""
-
-                st.session_state.generated_affiliate_name = ""
-                st.session_state.generated_original_question = ""
-
-                st.session_state.conversation_saved = False
-
-
-                st.error(
-                    "DeepSeek is currently unavailable "
-                    "and I could not find a reliable answer "
-                    "in the Knowledge Base."
-                )
+            st.session_state.bahasa_response = (
+                result["bahasa_response"]
+            )
 
 
 # =========================================================
@@ -655,13 +1345,18 @@ with english_column:
 
 
     st.text_area(
+
         "English Question",
+
         value=(
             st.session_state
             .english_question
         ),
+
         height=100,
+
         disabled=True,
+
         label_visibility="collapsed"
     )
 
@@ -672,19 +1367,24 @@ with english_column:
 
 
     st.text_area(
+
         "English Response",
+
         value=(
             st.session_state
             .english_response
         ),
+
         height=220,
+
         disabled=True,
+
         label_visibility="collapsed"
     )
 
 
 # =========================================================
-# BAHASA
+# BAHASA INDONESIA
 # =========================================================
 
 with bahasa_column:
@@ -701,13 +1401,18 @@ with bahasa_column:
 
 
     st.text_area(
+
         "Bahasa Question",
+
         value=(
             st.session_state
             .bahasa_question
         ),
+
         height=100,
+
         disabled=True,
+
         label_visibility="collapsed"
     )
 
@@ -718,77 +1423,17 @@ with bahasa_column:
 
 
     st.text_area(
+
         "Bahasa Response",
+
         value=(
             st.session_state
             .bahasa_response
         ),
+
         height=220,
+
         disabled=True,
+
         label_visibility="collapsed"
-    )
-
-
-# =========================================================
-# SAVE CONVERSATION
-# =========================================================
-
-st.divider()
-
-
-has_response = bool(
-
-    st.session_state.english_response
-
-    and
-
-    st.session_state.bahasa_response
-)
-
-
-save_button = st.button(
-
-    "💾 Save Conversation",
-
-    use_container_width=True,
-
-    disabled=(
-        not has_response
-        or
-        st.session_state.conversation_saved
-    )
-)
-
-
-if save_button:
-
-
-    try:
-
-        with st.spinner(
-            "Saving conversation..."
-        ):
-
-            save_conversation()
-
-
-        st.session_state.conversation_saved = True
-
-
-        st.success(
-            "Conversation saved successfully."
-        )
-
-
-    except Exception as e:
-
-        st.error(
-            f"Supabase error: {str(e)}"
-        )
-
-
-if st.session_state.conversation_saved:
-
-    st.caption(
-        "✅ This conversation has been saved."
     )
