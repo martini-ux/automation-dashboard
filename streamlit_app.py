@@ -1,8 +1,9 @@
 import streamlit as st
 import json
 import re
+import requests
+from difflib import SequenceMatcher
 from pathlib import Path
-from openai import OpenAI
 from supabase import create_client
 
 
@@ -18,11 +19,10 @@ st.set_page_config(
 
 
 # =========================================================
-# LOAD FILES
+# LOAD KNOWLEDGE BASE + PROMPT
 # =========================================================
 
 BASE_DIR = Path(__file__).parent
-
 
 with open(
     BASE_DIR / "data" / "knowledge_base.json",
@@ -30,7 +30,6 @@ with open(
     encoding="utf-8"
 ) as file:
     knowledge_base = json.load(file)
-
 
 with open(
     BASE_DIR / "prompts" / "affiliate_manager.txt",
@@ -44,7 +43,7 @@ with open(
 # SESSION STATE
 # =========================================================
 
-default_session_values = {
+defaults = {
     "english_question": "",
     "english_response": "",
     "bahasa_question": "",
@@ -54,26 +53,13 @@ default_session_values = {
     "conversation_saved": False
 }
 
-
-for key, value in default_session_values.items():
+for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
 
 # =========================================================
-# DEEPSEEK CLIENT
-# =========================================================
-
-def get_deepseek_client():
-
-    return OpenAI(
-        api_key=st.secrets["DEEPSEEK_API_KEY"],
-        base_url="https://api.deepseek.com"
-    )
-
-
-# =========================================================
-# SUPABASE CLIENT
+# SUPABASE
 # =========================================================
 
 @st.cache_resource
@@ -86,7 +72,7 @@ def get_supabase_client():
 
 
 # =========================================================
-# TEXT NORMALIZATION
+# TEXT HELPERS
 # =========================================================
 
 def normalize_text(text):
@@ -108,70 +94,144 @@ def normalize_text(text):
     return text
 
 
+def similarity(a, b):
+
+    return SequenceMatcher(
+        None,
+        normalize_text(a),
+        normalize_text(b)
+    ).ratio()
+
+
 # =========================================================
-# EXACT FAQ FALLBACK
+# SMART FAQ FALLBACK
 # =========================================================
 
-def exact_faq_match(question):
+def smart_faq_match(question):
 
-    normalized_question = normalize_text(
-        question
-    )
+    normalized_question = normalize_text(question)
+
+    question_words = normalized_question.split()
+
+    best_match = None
+    best_score = 0
+
 
     for faq in knowledge_base.get("faq", []):
 
-        english_question = normalize_text(
-            faq.get(
-                "question_en",
-                ""
-            )
+        english_question = faq.get(
+            "question_en",
+            ""
         )
 
-        bahasa_question = normalize_text(
-            faq.get(
-                "question_id",
-                ""
-            )
+        bahasa_question = faq.get(
+            "question_id",
+            ""
         )
 
-        if (
-            normalized_question == english_question
-            or
-            normalized_question == bahasa_question
-        ):
+        tags = faq.get(
+            "tags",
+            []
+        )
 
-            return {
 
-                "english_question":
-                    faq.get(
-                        "question_en",
-                        ""
-                    ),
+        # -----------------------------------------
+        # Full-question similarity
+        # -----------------------------------------
 
-                "english_response":
-                    faq.get(
-                        "answer_en",
-                        ""
-                    ),
+        english_score = similarity(
+            question,
+            english_question
+        )
 
-                "bahasa_question":
-                    faq.get(
-                        "question_id",
-                        ""
-                    ),
+        bahasa_score = similarity(
+            question,
+            bahasa_question
+        )
 
-                "bahasa_response":
-                    faq.get(
-                        "answer_id",
-                        ""
-                    )
-            }
+        score = max(
+            english_score,
+            bahasa_score
+        )
+
+
+        # -----------------------------------------
+        # Tag / keyword similarity
+        # -----------------------------------------
+
+        for tag in tags:
+
+            normalized_tag = normalize_text(
+                tag
+            )
+
+            tag_words = normalized_tag.split()
+
+            for question_word in question_words:
+
+                for tag_word in tag_words:
+
+                    word_score = SequenceMatcher(
+                        None,
+                        question_word,
+                        tag_word
+                    ).ratio()
+
+                    if word_score >= 0.80:
+
+                        score = max(
+                            score,
+                            0.85
+                        )
+
+
+        # -----------------------------------------
+        # Pick best FAQ
+        # -----------------------------------------
+
+        if score > best_score:
+
+            best_score = score
+
+            best_match = faq
+
+
+    # Require reasonable confidence
+    if best_match and best_score >= 0.60:
+
+        return {
+
+            "english_question":
+                best_match.get(
+                    "question_en",
+                    ""
+                ),
+
+            "english_response":
+                best_match.get(
+                    "answer_en",
+                    ""
+                ),
+
+            "bahasa_question":
+                best_match.get(
+                    "question_id",
+                    ""
+                ),
+
+            "bahasa_response":
+                best_match.get(
+                    "answer_id",
+                    ""
+                )
+        }
+
 
     return None
 
 
 # =========================================================
-# PARSE AI RESPONSE
+# PARSE DEEPSEEK RESPONSE
 # =========================================================
 
 def extract_section(
@@ -198,15 +258,12 @@ def extract_section(
     match = re.search(
         pattern,
         text,
-        flags=(
-            re.DOTALL
-            |
-            re.IGNORECASE
-        )
+        flags=re.DOTALL | re.IGNORECASE
     )
 
 
     if match:
+
         return match.group(1).strip()
 
 
@@ -225,7 +282,6 @@ def parse_ai_response(text):
                 "ENGLISH_RESPONSE"
             ),
 
-
         "english_response":
 
             extract_section(
@@ -234,7 +290,6 @@ def parse_ai_response(text):
                 "BAHASA_QUESTION"
             ),
 
-
         "bahasa_question":
 
             extract_section(
@@ -242,7 +297,6 @@ def parse_ai_response(text):
                 "BAHASA_QUESTION",
                 "BAHASA_RESPONSE"
             ),
-
 
         "bahasa_response":
 
@@ -254,16 +308,13 @@ def parse_ai_response(text):
 
 
 # =========================================================
-# GENERATE AI RESPONSE
+# DEEPSEEK ONLY
 # =========================================================
 
-def generate_response(
+def generate_deepseek_response(
     affiliate_name,
     affiliate_question
 ):
-
-    client = get_deepseek_client()
-
 
     knowledge_text = json.dumps(
         knowledge_base,
@@ -286,11 +337,11 @@ Generate the best response according to your instructions.
 """
 
 
-    response = client.chat.completions.create(
+    payload = {
 
-        model="deepseek-flash",
+        "model": "deepseek-flash",
 
-        messages=[
+        "messages": [
 
             {
                 "role": "system",
@@ -301,20 +352,52 @@ Generate the best response according to your instructions.
                 "role": "user",
                 "content": user_message
             }
-
         ],
 
-        temperature=0.5,
+        "temperature": 0.5,
 
-        max_tokens=900
+        "max_tokens": 900
+    }
+
+
+    headers = {
+
+        "Authorization":
+            f"Bearer {st.secrets['DEEPSEEK_API_KEY']}",
+
+        "Content-Type":
+            "application/json"
+    }
+
+
+    response = requests.post(
+
+        "https://api.deepseek.com/chat/completions",
+
+        headers=headers,
+
+        json=payload,
+
+        timeout=60
     )
 
 
+    if response.status_code != 200:
+
+        raise RuntimeError(
+            f"DeepSeek returned "
+            f"{response.status_code}: "
+            f"{response.text}"
+        )
+
+
+    data = response.json()
+
+
     output = (
-        response
-        .choices[0]
-        .message
-        .content
+        data["choices"][0]
+        ["message"]
+        ["content"]
     )
 
 
@@ -354,7 +437,7 @@ def save_conversation():
     }
 
 
-    result = (
+    return (
         supabase
         .table(
             "affiliate_conversations"
@@ -366,9 +449,6 @@ def save_conversation():
     )
 
 
-    return result
-
-
 # =========================================================
 # HEADER
 # =========================================================
@@ -377,12 +457,10 @@ st.title(
     "💬 Affiliate Response Assistant"
 )
 
-
 st.caption(
     "Generate short, natural affiliate responses "
     "in English and Bahasa Indonesia."
 )
-
 
 st.divider()
 
@@ -392,37 +470,29 @@ st.divider()
 # =========================================================
 
 affiliate_name = st.text_input(
-
     "Affiliate Name",
-
     placeholder="Example: Rizky"
 )
 
 
 affiliate_question = st.text_area(
-
     "Affiliate Question",
-
     placeholder=(
         "Paste the affiliate's message here..."
     ),
-
     height=140
 )
 
 
 generate_button = st.button(
-
     "✨ Generate Response",
-
     type="primary",
-
     use_container_width=True
 )
 
 
 # =========================================================
-# GENERATION
+# GENERATE
 # =========================================================
 
 if generate_button:
@@ -448,9 +518,16 @@ if generate_button:
             "Creating response..."
         ):
 
+            generated = False
+
+
+            # =============================================
+            # TRY DEEPSEEK FIRST
+            # =============================================
+
             try:
 
-                result = generate_response(
+                result = generate_deepseek_response(
                     affiliate_name,
                     affiliate_question
                 )
@@ -462,100 +539,90 @@ if generate_button:
                     result["bahasa_response"]
                 ):
 
-                    st.session_state.english_question = (
-                        result["english_question"]
-                    )
-
-                    st.session_state.english_response = (
-                        result["english_response"]
-                    )
-
-                    st.session_state.bahasa_question = (
-                        result["bahasa_question"]
-                    )
-
-                    st.session_state.bahasa_response = (
-                        result["bahasa_response"]
-                    )
-
-                    st.session_state.generated_affiliate_name = (
-                        affiliate_name.strip()
-                    )
-
-                    st.session_state.generated_original_question = (
-                        affiliate_question.strip()
-                    )
-
-                    st.session_state.conversation_saved = False
+                    generated = True
 
 
-                else:
+            except Exception:
 
-                    raise ValueError(
-                        "AI response format was incomplete."
-                    )
+                generated = False
 
 
-            except Exception as e:
+            # =============================================
+            # KNOWLEDGE BASE FALLBACK
+            # =============================================
 
-                # -----------------------------------------
-                # TEMPORARY DEBUG MESSAGE
-                # Shows the real DeepSeek error
-                # -----------------------------------------
+            if not generated:
 
-                st.warning(
-                    f"DeepSeek error: "
-                    f"{type(e).__name__}: "
-                    f"{str(e)}"
-                )
-
-
-                fallback = exact_faq_match(
+                result = smart_faq_match(
                     affiliate_question
                 )
 
 
-                if fallback:
+                if result:
 
-                    st.session_state.english_question = (
-                        fallback["english_question"]
-                    )
-
-                    st.session_state.english_response = (
-                        fallback["english_response"]
-                    )
-
-                    st.session_state.bahasa_question = (
-                        fallback["bahasa_question"]
-                    )
-
-                    st.session_state.bahasa_response = (
-                        fallback["bahasa_response"]
-                    )
-
-                    st.session_state.generated_affiliate_name = (
-                        affiliate_name.strip()
-                    )
-
-                    st.session_state.generated_original_question = (
-                        affiliate_question.strip()
-                    )
-
-                    st.session_state.conversation_saved = False
-
+                    generated = True
 
                     st.info(
-                        "AI was unavailable, so an exact "
-                        "FAQ answer was used."
+                        "DeepSeek is currently unavailable, "
+                        "so the Knowledge Base was used."
                     )
 
 
-                else:
+            # =============================================
+            # STORE RESULT
+            # =============================================
 
-                    st.error(
-                        "AI service is temporarily unavailable. "
-                        "Please try again."
-                    )
+            if generated:
+
+                st.session_state.english_question = (
+                    result["english_question"]
+                )
+
+                st.session_state.english_response = (
+                    result["english_response"]
+                )
+
+                st.session_state.bahasa_question = (
+                    result["bahasa_question"]
+                )
+
+                st.session_state.bahasa_response = (
+                    result["bahasa_response"]
+                )
+
+                st.session_state.generated_affiliate_name = (
+                    affiliate_name.strip()
+                )
+
+                st.session_state.generated_original_question = (
+                    affiliate_question.strip()
+                )
+
+                st.session_state.conversation_saved = False
+
+
+            else:
+
+                # Clear old answer so we do not
+                # accidentally save an old conversation.
+
+                st.session_state.english_question = ""
+                st.session_state.english_response = ""
+
+                st.session_state.bahasa_question = ""
+                st.session_state.bahasa_response = ""
+
+                st.session_state.generated_affiliate_name = ""
+                st.session_state.generated_original_question = ""
+
+                st.session_state.conversation_saved = False
+
+
+                st.error(
+                    "DeepSeek is currently unavailable "
+                    "and I could not find a reliable answer "
+                    "in the Knowledge Base."
+                )
 
 
 # =========================================================
@@ -571,7 +638,7 @@ english_column, bahasa_column = (
 
 
 # =========================================================
-# ENGLISH COLUMN
+# ENGLISH
 # =========================================================
 
 with english_column:
@@ -588,18 +655,13 @@ with english_column:
 
 
     st.text_area(
-
         "English Question",
-
         value=(
             st.session_state
             .english_question
         ),
-
         height=100,
-
         disabled=True,
-
         label_visibility="collapsed"
     )
 
@@ -610,24 +672,19 @@ with english_column:
 
 
     st.text_area(
-
         "English Response",
-
         value=(
             st.session_state
             .english_response
         ),
-
         height=220,
-
         disabled=True,
-
         label_visibility="collapsed"
     )
 
 
 # =========================================================
-# BAHASA COLUMN
+# BAHASA
 # =========================================================
 
 with bahasa_column:
@@ -644,18 +701,13 @@ with bahasa_column:
 
 
     st.text_area(
-
         "Bahasa Question",
-
         value=(
             st.session_state
             .bahasa_question
         ),
-
         height=100,
-
         disabled=True,
-
         label_visibility="collapsed"
     )
 
@@ -666,18 +718,13 @@ with bahasa_column:
 
 
     st.text_area(
-
         "Bahasa Response",
-
         value=(
             st.session_state
             .bahasa_response
         ),
-
         height=220,
-
         disabled=True,
-
         label_visibility="collapsed"
     )
 
@@ -699,29 +746,19 @@ has_response = bool(
 )
 
 
-save_disabled = (
-
-    not has_response
-
-    or
-
-    st.session_state.conversation_saved
-)
-
-
 save_button = st.button(
 
     "💾 Save Conversation",
 
     use_container_width=True,
 
-    disabled=save_disabled
+    disabled=(
+        not has_response
+        or
+        st.session_state.conversation_saved
+    )
 )
 
-
-# =========================================================
-# SAVE BUTTON ACTION
-# =========================================================
 
 if save_button:
 
@@ -745,21 +782,10 @@ if save_button:
 
     except Exception as e:
 
-        # -----------------------------------------
-        # TEMPORARY DEBUG MESSAGE
-        # Shows the real Supabase error
-        # -----------------------------------------
-
         st.error(
-            f"Supabase error: "
-            f"{type(e).__name__}: "
-            f"{str(e)}"
+            f"Supabase error: {str(e)}"
         )
 
-
-# =========================================================
-# SAVED STATUS
-# =========================================================
 
 if st.session_state.conversation_saved:
 
