@@ -1,1 +1,508 @@
+{
+  "metadata": {
+    "name": "Affiliate Manager Knowledge Base - Indonesia",
+    "market": "Indonesia",
+    "languages": [
+      "English",
+      "Bahasa Indonesia"
+    ],
+    "purpose": "Knowledge base for generating short, natural affiliate-manager responses.",
+    "response_style": {
+      "human_like": true,
+      "mobile_friendly": true,
+      "preferred_length": "short_to_medium",
+      "generate_one_best_response": true,
+      "always_generate_english_and_bahasa": true
+    }
+  },
 
+  "manager_rules": {
+    "official_information_priority": "Always use this knowledge base before general model knowledge.",
+    "unknown_official_information": {
+      "english": "Let me double-check that for you so I can give you the correct information.",
+      "bahasa": "Biar saya cek dulu supaya saya bisa memberikan informasi yang benar kepada kamu."
+    },
+    "never_invent": [
+      "commission requirements",
+      "payout requirements",
+      "payment dates",
+      "company policies",
+      "promotion rules",
+      "account requirements"
+    ],
+    "conversation_save_mode": "manual",
+    "affiliate_identity_rule": "Treat the affiliate name as the unique affiliate identity."
+  },
+
+  "commission": {
+    "starting_revshare_percent": 25,
+    "maximum_revshare_percent": 40,
+    "priority": "low_unless_asked",
+    "upgrade_rule": "Commission starts at 25% and may increase up to 40% depending on affiliate profitability and performance. Higher commission levels are subject to discussion and approval by the Affiliate Manager.",
+    "weekly_calculation": {
+      "period": "Monday to Sunday",
+      "timezone": "Indonesia time"
+    },
+    "calculation_basis": "Commission is based on the referred players' net gaming result / net losses according to the affiliate program."
+  },
+
+  "payout_rules": {
+    "automatic": true,
+    "manual_withdrawal_request_required": false,
+    "minimum_commission_usd": 30,
+    "minimum_active_players": 3,
+    "payout_day": "Tuesday",
+    "available_balance_update": "Eligible commission normally becomes visible in Available to Withdraw on Monday.",
+    "note": "The current working rule is 3 active players for payout.",
+    "negative_carryover": {
+      "enabled": true,
+      "explanation": "If referred players win and the affiliate commission becomes negative, the negative balance carries over. It is not reset to zero. Future positive results must first recover the negative balance."
+    }
+  },
+
+  "faq": [
+    {
+      "id": "available_balance_zero",
+      "question_en": "Why is my Available Balance $0?",
+      "question_id": "Kenapa Available Balance saya $0?",
+      "answer_en": "Payouts are processed automatically every Tuesday. Make sure you have at least $30 in commission and at least 3 active players. If you already meet the requirements, also check that your payment wallet is properly linked.",
+      "answer_id": "Pembayaran diproses otomatis setiap hari Selasa. Pastikan komisi kamu minimal $30 dan kamu memiliki setidaknya 3 pemain aktif. Jika semua syarat sudah terpenuhi, pastikan juga wallet pembayaran kamu sudah terhubung dengan benar.",
+      "tags": [
+        "balance",
+        "available balance",
+        "zero balance",
+        "payout",
+        "commission"
+      ]
+    },
+
+    {
+      "id": "what_is_ftd",
+      "question_en": "What is an FTD?",
+      "question_id": "Apa itu FTD?",
+      "answer_en": "FTD means First Time Depositor. It is a new player who registers and successfully makes their first deposit.",
+      "answer_id": "FTD berarti First Time Depositor. Ini adalah pemain baru yang mendaftar dan berhasil melakukan deposit pertamanya.",
+      "tags": [
+        "FTD",
+        "first deposit",
+        "player"
+      ]
+    },
+
+    {
+      "id": "subid_required",
+      "question_en": "Is SubID required?",
+      "question_id": "Apakah SubID wajib?",
+      "answer_en": "No. SubID is optional. You can use it when you want to separate and track different traffic sources or campaigns.",
+      "answer_id": "Tidak. SubID bersifat opsional. Kamu bisa menggunakannya jika ingin memisahkan dan melacak sumber traffic atau campaign yang berbeda.",
+      "tags": [
+        "SubID",
+        "tracking",
+        "affiliate link"
+      ]
+    },
+
+    {
+      "id": "generated_link_location",
+      "question_en": "Where does my generated affiliate link appear?",
+      "question_id": "Di mana link affiliate yang sudah dibuat muncul?",
+      "answer_en": "After creating the link, check Affiliate link list under the Active tab. You can copy the generated tracking link from there.",
+      "answer_id": "Setelah membuat link, cek Affiliate link list pada tab Active. Kamu bisa menyalin tracking link dari sana.",
+      "tags": [
+        "link",
+        "affiliate link",
+        "active tab"
+      ]
+    },
+
+    {
+      "id": "custom_promo_code",
+      "question_en": "How do I request a custom promo code?",
+      "question_id": "Bagaimana cara meminta promo code custom?",
+      "answer_en": "Send your preferred word or brand name to your Affiliate Manager on Telegram. The requested promo code should contain at least 5 letters or numbers.",
+      "answer_id": "Kirim kata atau nama brand yang kamu inginkan kepada Affiliate Manager melalui Telegram. Promo code yang diminta harus memiliki minimal 5 huruf atau angka.",
+      "tags": [
+        "promo code",
+        "custom code",
+        "promotion"
+      ]
+    },
+
+    {
+      "id": "commission_percentage",
+      "question_en": "How much commission do I get?",
+      "question_id": "Berapa komisi yang saya dapatkan?",
+      "answer_en": "The starting RevShare commission is 25%. Depending on your performance and profitability, it can increase up to 40%. Higher commission levels are discussed with your Affiliate Manager.",
+      "answer_id": "Komisi RevShare dimulai dari 25%. Tergantung performa dan profitabilitas kamu, komisi bisa meningkat hingga 40%. Untuk peningkatan komisi, silakan diskusikan dengan Affiliate Manager.",
+      "tags": [
+        "commission",
+        "revshare",
+        "25%",
+        "40%"
+      ]
+    },
+
+    {
+      "id": "when_is_payout",
+      "question_en": "When will I receive my payout?",
+      "question_id": "Kapan saya menerima pembayaran?",
+      "answer_en": "Eligible payouts are normally processed automatically every Tuesday. Make sure you have at least $30 in commission, at least 3 active players, and your payment wallet is correctly linked.",
+      "answer_id": "Pembayaran yang memenuhi syarat biasanya diproses otomatis setiap hari Selasa. Pastikan komisi kamu minimal $30, memiliki setidaknya 3 pemain aktif, dan wallet pembayaran sudah terhubung dengan benar.",
+      "tags": [
+        "payout",
+        "Tuesday",
+        "payment"
+      ]
+    },
+
+    {
+      "id": "negative_commission",
+      "question_en": "Why is my commission negative?",
+      "question_id": "Kenapa komisi saya negatif?",
+      "answer_en": "This can happen when your referred players win more than they lose. The negative balance carries over and is not reset. Future positive results will first recover the negative balance.",
+      "answer_id": "Ini bisa terjadi ketika pemain yang kamu referensikan menang lebih banyak daripada kalah. Saldo negatif akan dibawa ke periode berikutnya dan tidak di-reset. Hasil positif berikutnya akan digunakan terlebih dahulu untuk menutup saldo negatif tersebut.",
+      "tags": [
+        "negative balance",
+        "carryover",
+        "commission"
+      ]
+    }
+  ],
+
+  "affiliate_link_generation": {
+    "menu": "Affiliate Links",
+    "section": "Create link",
+    "fields": [
+      {
+        "name_en": "Website",
+        "name_id": "Situs web",
+        "required": true
+      },
+      {
+        "name_en": "Currency",
+        "name_id": "Mata uang",
+        "required": true,
+        "example": "USD"
+      },
+      {
+        "name_en": "Campaign",
+        "name_id": "Kampanye",
+        "required": true,
+        "example": "World Wide"
+      },
+      {
+        "name_en": "Landing page",
+        "name_id": "Halaman landing",
+        "required": false
+      },
+      {
+        "name_en": "SubID",
+        "name_id": "SubID",
+        "required": false
+      }
+    ],
+
+    "steps": [
+      "Log in to the 1xPartners Dashboard.",
+      "Open Affiliate Links.",
+      "Open Create link.",
+      "Select Website.",
+      "Select Currency.",
+      "Select Campaign.",
+      "Optionally select a Landing page.",
+      "Optionally enter a SubID.",
+      "Click Create link.",
+      "Open Affiliate link list and check the Active tab.",
+      "Copy the generated tracking link."
+    ],
+
+    "tracking_advice": "Use consistent SubID names when tracking different traffic sources or campaigns."
+  },
+
+  "promo_codes": {
+    "automatic_generation": false,
+    "request_method": "Contact the Affiliate Manager through Telegram.",
+    "minimum_length": 5,
+    "allowed_format": "letters or numbers",
+    "instruction": "Send the preferred word or brand name to the Affiliate Manager for activation.",
+    "if_unavailable": "Send an alternative promo-code name to the Affiliate Manager."
+  },
+
+  "payment_wallet": {
+    "purpose": "Used to receive automated affiliate payouts.",
+
+    "steps": [
+      {
+        "step": 1,
+        "title": "Create a Player Account",
+        "instruction": "Create a standard 1xBet Player Account that will be used as the payment wallet."
+      },
+      {
+        "step": 2,
+        "title": "Complete the Player Profile",
+        "instruction": "Complete the required profile details such as full name, phone number and email."
+      },
+      {
+        "step": 3,
+        "title": "Match Personal Information",
+        "instruction": "The personal information on the Player Account should closely match the information registered on the Affiliate Account."
+      },
+      {
+        "step": 4,
+        "title": "Submit the Request",
+        "instruction": "Send the wallet-linking request to support@partners1xbet.com using the email address registered to the Affiliate Dashboard."
+      },
+      {
+        "step": 5,
+        "title": "Security Verification",
+        "instruction": "The request is reviewed by the security team. The working guide states that this normally takes 1 to 3 business days."
+      }
+    ],
+
+    "email_template_id": "Halo Tim Dukungan,\nMohon setujui penautan ID Pemain [Masukkan ID Pemain Anda] sebagai dompet pembayaran untuk ID Afiliasi [Masukkan ID Afiliasi Anda]."
+  },
+
+  "troubleshooting": [
+    {
+      "issue": "Affiliate link does not appear after creation",
+      "solution_en": "Confirm that Website, Currency and Campaign are selected. Click Create link once, check the Active tab under Affiliate link list, and refresh the page if needed.",
+      "solution_id": "Pastikan Website, Currency, dan Campaign sudah dipilih. Klik Create link satu kali, cek tab Active pada Affiliate link list, lalu refresh halaman jika diperlukan."
+    },
+
+    {
+      "issue": "Payment has not arrived",
+      "solution_en": "Check that the $30 minimum commission and 3-active-player requirement are met. Then confirm that the player wallet is linked. If everything is correct, contact the Affiliate Manager with your Affiliate ID.",
+      "solution_id": "Pastikan minimum komisi $30 dan syarat 3 pemain aktif sudah terpenuhi. Setelah itu pastikan player wallet sudah terhubung. Jika semuanya sudah benar, hubungi Affiliate Manager dan kirim Affiliate ID kamu."
+    },
+
+    {
+      "issue": "Wallet request is still pending",
+      "solution_en": "Confirm that the request was sent from the registered email and that all IDs are correct. Allow the stated review period, then follow up in the same support email thread.",
+      "solution_id": "Pastikan permintaan dikirim dari email yang terdaftar dan semua ID sudah benar. Tunggu sesuai periode pemeriksaan, lalu follow up melalui email support yang sama."
+    },
+
+    {
+      "issue": "Promo-code request was not approved",
+      "solution_en": "Make sure the requested code contains at least five letters or numbers. If the first choice is unavailable, send another name to your Affiliate Manager.",
+      "solution_id": "Pastikan kode yang diminta memiliki minimal lima huruf atau angka. Jika pilihan pertama tidak tersedia, kirim nama alternatif kepada Affiliate Manager."
+    },
+
+    {
+      "issue": "Dashboard fields will not load",
+      "solution_en": "Refresh the page, use an updated browser, temporarily disable content blocking for the dashboard, and try another network. If the issue continues, send the Affiliate Manager a screenshot and the time the issue happened.",
+      "solution_id": "Refresh halaman, gunakan browser terbaru, nonaktifkan sementara content blocking untuk dashboard, dan coba jaringan lain. Jika masalah tetap terjadi, kirim screenshot dan waktu kejadian kepada Affiliate Manager."
+    }
+  ],
+
+  "glossary": {
+    "FTD": "First Time Depositor — a new player who makes their first successful deposit.",
+    "NGR": "Net Gaming Revenue — a net-revenue metric used in affiliate performance.",
+    "SubID": "An optional tracking label used to distinguish traffic sources, placements or campaigns.",
+    "Landing Page": "The destination page selected when creating an affiliate link.",
+    "Campaign": "The campaign selection used when creating an affiliate link.",
+    "RevShare": "A revenue-sharing commission model used for affiliate earnings."
+  },
+
+  "promo_material_guidelines": {
+    "clear_cta": "Make the next action obvious, such as register, use the promo code, or open the link.",
+    "local_language": "Use simple and easy-to-read Indonesian for Indonesian audiences.",
+    "mobile_friendly": "Check banners, links and promotional content on a mobile device before publishing.",
+    "accurate_promo_information": "Make sure bonus amounts, conditions and calls to action match the actual promotion being used."
+  },
+
+  "compliance": {
+    "brand_bidding": {
+      "allowed": false,
+      "rule": "Do not bid on brand keywords such as '1xBet', '1xBet login', or similar brand variations on Google Ads, PPC platforms, or other search engines."
+    },
+
+    "uncertain_promotion_method": "If unsure whether a promotion method is permitted, confirm with the Affiliate Manager before launching the campaign."
+  },
+
+  "onboarding": {
+    "communication_model": {
+      "standard_calls": 1,
+      "additional_calls": "Only when requested.",
+      "after_registration": "Communication is normally handled through chat."
+    },
+
+    "introduction_goal": "Explain that the Affiliate Manager will understand the partner's existing resources, audience, experience and strengths, then help create a suitable starting strategy.",
+
+    "general_questions": [
+      "Where do you currently have the easiest access to potential players: people you know, your own audience, or online communities?",
+      "How many people can you realistically reach right now without building a completely new audience?",
+      "What resources do you already have that could help you bring players?",
+      "Do you have active social-media accounts or your own audience? Which platforms and how large are they?",
+      "Do you have a strong circle of friends, colleagues or other people you speak with regularly?",
+      "Are there online groups, chats, communities or forums you know well?",
+      "How comfortable are you directly talking to people you know about the product?",
+      "How comfortable are you creating content and showing yourself publicly?",
+      "How comfortable are you working without using your real identity or public profile?",
+      "Have you promoted products or projects before? What did you do and what was the result?",
+      "What are you strongest at: talking to people, creating content, or finding and engaging people in communities?",
+      "How much time can you realistically spend on this every day?"
+    ],
+
+    "initial_record_fields": [
+      "Resources",
+      "Audience",
+      "Platform",
+      "Personal Network",
+      "Communities",
+      "Experience",
+      "Available Time",
+      "Strengths"
+    ]
+  },
+
+  "affiliate_classes": {
+    "soldier": {
+      "main_strength": "Personal network and direct communication.",
+      "signs": [
+        "Strong circle of friends, colleagues or acquaintances.",
+        "People trust their recommendations.",
+        "Comfortable talking directly with people.",
+        "Does not require a large personal social-media audience."
+      ],
+
+      "strategy": {
+        "audience": "Relevant people from the affiliate's personal network.",
+        "source": "Friends, colleagues and acquaintances.",
+        "method": "Personal recommendation.",
+        "first_test": "Contact the most relevant people and identify which approach works best."
+      },
+
+      "followup_questions": [
+        "Who among your friends, colleagues or contacts is most likely to be interested?",
+        "Approximately how many relevant contacts do you have?",
+        "Who is most likely to trust your recommendation?",
+        "How would you normally start this type of conversation?",
+        "Who would you contact first?",
+        "Do you prefer communicating in person, by phone or through a messenger?",
+        "How many people can you realistically contact during your first working session?",
+        "What result do you expect from the first test?"
+      ]
+    },
+
+    "idol": {
+      "main_strength": "Existing personal audience and content creation.",
+
+      "signs": [
+        "Active social-media presence.",
+        "Existing audience.",
+        "Comfortable showing themselves publicly.",
+        "Understands content creation.",
+        "Followers already trust them."
+      ],
+
+      "strategy": {
+        "audience": "Existing followers.",
+        "source": "Strongest social-media platform.",
+        "method": "Create relevant content and move interested followers toward registration.",
+        "first_test": "Publish the first piece of content and measure the response."
+      },
+
+      "followup_questions": [
+        "Which platform is your strongest right now?",
+        "How many active followers do you have there?",
+        "Why do people follow you?",
+        "What type of content normally gets the best response?",
+        "Which part of your audience is most active?",
+        "What is the most natural way for you to introduce the product to your audience?",
+        "What type of offer or content would make your audience interested?",
+        "What is the first piece of content you are ready to publish?"
+      ]
+    },
+
+    "ghost": {
+      "main_strength": "Online communities and non-personal-brand communication.",
+
+      "signs": [
+        "Does not want to rely on public personal branding.",
+        "Knows online communities.",
+        "Understands where the target audience communicates.",
+        "Comfortable communicating online."
+      ],
+
+      "strategy": {
+        "audience": "People inside relevant online communities.",
+        "source": "Selected online communities.",
+        "method": "Participate in conversations, build interest, and move relevant users toward registration.",
+        "first_test": "Test several relevant communities and identify which ones produce the strongest response."
+      },
+
+      "followup_questions": [
+        "Which platforms and communities do you know best?",
+        "Where does your target audience communicate?",
+        "Which types of communities are most relevant?",
+        "Which topics receive the most activity?",
+        "What type of communication gets the best response?",
+        "How can you naturally participate before introducing the product?",
+        "Which 3 to 5 communities would you test first?",
+        "How much time can you spend on this every day?",
+        "What result would show that a community is worth continuing to work with?"
+      ]
+    }
+  },
+
+  "final_strategy": {
+    "summary_structure": [
+      "Your target audience is [X].",
+      "We will find them through [X].",
+      "Your main way of working will be [X].",
+      "Your first task will be [X].",
+      "We will measure [X] to understand whether the strategy works."
+    ],
+
+    "record_fields": [
+      "Class",
+      "Audience",
+      "Platform",
+      "Traffic source",
+      "Acquisition method",
+      "First hypothesis",
+      "First task",
+      "Expected result"
+    ]
+  },
+
+  "registration": {
+    "confirmation_question": "This is the strategy we built based on your situation. Are you ready to work according to this plan?",
+
+    "if_yes": [
+      "Register the affiliate.",
+      "Send the appropriate login/access details.",
+      "Give the first practical task."
+    ],
+
+    "if_no": [
+      "Do not complete registration yet.",
+      "Record the reason."
+    ]
+  },
+
+  "activation": {
+    "goal": "Bring 3 to 5 real players.",
+    "real_player_definition": [
+      "Registers",
+      "Makes a deposit",
+      "Starts actively playing"
+    ],
+
+    "working_cycle": [
+      "Task",
+      "Check",
+      "Next task",
+      "Result",
+      "Scale or mark inactive"
+    ],
+
+    "first_task_rule": "The first task must be clear, specific and directly connected to bringing real players who register, deposit and start playing.",
+
+    "class_goal": {
+      "soldier": "Work with the personal network and bring the first relevant people toward registration, deposit and active play.",
+      "idol": "Use the existing audience and content to move interested followers toward registration, deposit and active play.",
+      "ghost": "Work with selected communities and move interested users toward registration, deposit and active play."
+    }
+  }
+}
